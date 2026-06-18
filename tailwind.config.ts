@@ -66,8 +66,8 @@ export default {
         },
       },
       fontFamily: {
-        display: ["Cormorant Garamond", "serif"],
-        body: ["Space Grotesk", "sans-serif"],
+        display: ["Cormorant Garamond", "Gowun Batang", "serif"],
+        body: ["Space Grotesk", "Pretendard", "sans-serif"],
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -1,0 +1,248 @@
+/* 아바타 성장기 미리보기 — Body 안쪽 전용 스타일.
+   기존 iv-* 토큰 재사용. */
+
+.iv-journey {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px 18px;
+}
+
+.iv-journey-head {
+  text-align: center;
+  padding: 4px 0 0;
+}
+.iv-journey-head h2 {
+  font-size: 22px;
+  font-weight: 800;
+  margin-top: 4px;
+}
+.iv-journey-head p {
+  font-size: 12px;
+  color: var(--iv-txt2);
+  margin-top: 4px;
+}
+
+/* 메인 무대 */
+.iv-journey-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 22px;
+  background: radial-gradient(120% 100% at 50% 0%, #2a1f4d 0%, #15102a 60%, #0a0816 100%);
+  border: 1px solid rgba(163, 148, 247, 0.22);
+  overflow: hidden;
+  box-shadow: inset 0 0 60px -10px rgba(124, 111, 232, 0.25);
+}
+.iv-journey-stage canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.iv-journey-stage-label {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+}
+.iv-journey-day {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  font-weight: 800;
+  color: #a394f7;
+}
+.iv-journey-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: #f4f3fa;
+}
+
+.iv-journey-caption {
+  font-size: 12.5px;
+  color: var(--iv-txt2);
+  text-align: center;
+  line-height: 1.55;
+}
+
+/* 7단계 칩 strip */
+.iv-journey-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  scroll-snap-type: x mandatory;
+}
+.iv-journey-strip::-webkit-scrollbar {
+  height: 0;
+}
+.iv-journey-chip {
+  position: relative;
+  flex: 0 0 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px 8px;
+  background: rgba(25, 21, 39, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  scroll-snap-align: center;
+  transition: 0.18s;
+}
+.iv-journey-chip:hover {
+  border-color: rgba(163, 148, 247, 0.45);
+}
+.iv-journey-chip.on {
+  border-color: #a394f7;
+  background: linear-gradient(
+    160deg,
+    rgba(124, 111, 232, 0.28),
+    rgba(25, 21, 39, 0.85)
+  );
+  box-shadow: 0 0 0 1px rgba(163, 148, 247, 0.5), 0 8px 20px -10px rgba(124, 111, 232, 0.5);
+}
+.iv-journey-chip.locked {
+  opacity: 0.55;
+}
+.iv-journey-chip-canvas {
+  width: 64px;
+  height: 64px;
+  border-radius: 12px;
+  background: radial-gradient(60% 60% at 50% 30%, #2a1f4d, #0d0a18);
+  overflow: hidden;
+  display: block;
+}
+.iv-journey-chip-canvas canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+.iv-journey-chip-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1.1;
+}
+.iv-journey-chip-day {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #a394f7;
+}
+.iv-journey-chip-name {
+  font-size: 10.5px;
+  color: #d9d4ea;
+}
+.iv-journey-chip-lock,
+.iv-journey-chip-now {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.iv-journey-chip-lock {
+  font-size: 11px;
+  padding: 0;
+  background: none;
+}
+.iv-journey-chip-now {
+  background: linear-gradient(135deg, #7c6fe8, #e87fb8);
+  color: #fff;
+}
+
+/* Scrub */
+.iv-journey-scrub {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--iv-txt3);
+  font-weight: 700;
+}
+.iv-journey-scrub input[type="range"] {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 24px;
+}
+.iv-journey-scrub input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7c6fe8, #e87fb8 60%, #ffd58a);
+}
+.iv-journey-scrub input[type="range"]::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #7c6fe8, #e87fb8 60%, #ffd58a);
+}
+.iv-journey-scrub input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #a394f7;
+  margin-top: -7px;
+  box-shadow: 0 0 0 4px rgba(163, 148, 247, 0.25);
+  cursor: pointer;
+}
+.iv-journey-scrub input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #a394f7;
+  box-shadow: 0 0 0 4px rgba(163, 148, 247, 0.25);
+  cursor: pointer;
+}
+
+/* 현재 상태 박스 */
+.iv-journey-status {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px;
+  background: rgba(25, 21, 39, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 14px;
+}
+.iv-journey-status > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+  text-align: center;
+}
+.iv-journey-status-k {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--iv-txt3);
+  font-weight: 700;
+}
+.iv-journey-status strong {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #f4f3fa;
+}
+
+.iv-journey-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}

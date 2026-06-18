@@ -62,9 +62,10 @@ export function GlassPlanet() {
     if (!grp.current) return;
     // 관성 자동 회전
     if (!planetRot.dragging) {
+      // 드래그 후 관성은 서서히 멈춰 안정된 정면 포즈로 정착(영구 자전 X)
       planetRot.y += planetRot.velX;
-      planetRot.velX *= 0.96;
-      if (Math.abs(planetRot.velX) < 0.0016) planetRot.velX = 0.0016;
+      planetRot.velX *= 0.94;
+      if (Math.abs(planetRot.velX) < 0.0002) planetRot.velX = 0;
     }
     grp.current.rotation.y = planetRot.y;
     grp.current.rotation.x = planetRot.x;

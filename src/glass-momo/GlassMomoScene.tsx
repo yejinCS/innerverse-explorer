@@ -8,10 +8,13 @@ import { SpeechBubble } from "./overlay/SpeechBubble";
 import { OutcomeBanner } from "./overlay/OutcomeBanner";
 import { ModeToggle } from "./overlay/ModeToggle";
 import { EmotionDock } from "./overlay/EmotionDock";
+import { BgPicker } from "./overlay/BgPicker";
+import { selectBackground, useEmotionStore } from "@/store/emotionStore";
 import "./innerverse.css";
 
 export function GlassMomoScene() {
   const [loaded, setLoaded] = useState(false);
+  const background = useEmotionStore(selectBackground);
 
   useEffect(() => {
     // 유리 셰이더 컴파일 시간을 살짝 가려주는 짧은 페이드아웃
@@ -25,7 +28,8 @@ export function GlassMomoScene() {
   }, []);
 
   return (
-    <div className="iv-stage">
+    <div className="iv-stage" style={{ background }}>
+      <BgPicker />
       <div className="iv-lead">
         <div className="iv-k">3D · GLASS MOMO · EMOTION EVOLUTION</div>
         <h1>감정이 모모를 빚는다</h1>

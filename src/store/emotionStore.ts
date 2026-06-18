@@ -1,7 +1,13 @@
 // INNERVERSE 감정 상태 store
-// 감정 누적 → decideBranch → 행성 분기 전환
+// 감정 누적 → decideBranch → 행성 분기 전환 + 배경 테마.
 import { create } from "zustand";
 import { BRANCH, COL, LINES, TALK_LINES, decideBranch, type BranchKey, type EmoKey } from "@/glass-momo/constants";
+import {
+  BG_PRESET_BY_KEY,
+  customBg,
+  DEFAULT_CUSTOM_COLORS,
+  type BgPresetKey,
+} from "@/glass-momo/bgPresets";
 
 interface EmotionState {
   emo: Record<EmoKey, number>;
@@ -20,12 +26,47 @@ interface EmotionState {
   speech: string;
   outcomeShown: boolean;
 
+  // 배경 테마
+  bgMode: "preset" | "custom";
+  bgPreset: BgPresetKey;
+  bgCustom: [string, string, string];
+
   feed: (key: EmoKey) => void;
   talk: () => void;
   toggleFriend: (on?: boolean) => void;
   reset: () => void;
   say: (text: string) => void;
   hideOutcome: () => void;
+
+  setBgPreset: (key: BgPresetKey) => void;
+  setBgCustom: (idx: 0 | 1 | 2, color: string) => void;
+  setBgMode: (mode: "preset" | "custom") => void;
+}
+
+// localStorage 영속화 — 첫 진입 시 저장된 배경 복원
+const BG_STORAGE_KEY = "innerverse.bg";
+type StoredBg = { mode: "preset" | "custom"; preset: BgPresetKey; custom: [string, string, string] };
+function loadBg(): StoredBg {
+  if (typeof window === "undefined") {
+    return { mode: "preset", preset: "cosmic", custom: [...DEFAULT_CUSTOM_COLORS] };
+  }
+  try {
+    const raw = window.localStorage.getItem(BG_STORAGE_KEY);
+    if (!raw) throw new Error("none");
+    const parsed = JSON.parse(raw) as StoredBg;
+    if (!BG_PRESET_BY_KEY[parsed.preset]) throw new Error("invalid preset");
+    return parsed;
+  } catch {
+    return { mode: "preset", preset: "cosmic", custom: [...DEFAULT_CUSTOM_COLORS] };
+  }
+}
+function saveBg(s: StoredBg) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(BG_STORAGE_KEY, JSON.stringify(s));
+  } catch {
+    /* quota/privacy mode 무시 */
+  }
 }
 
 const initialEmo: Record<EmoKey, number> = { pos: 30, calm: 0, ten: 10, sad: 8, emp: 6 };
@@ -37,6 +78,7 @@ function applyBranch(emo: Record<EmoKey, number>) {
 
 export const useEmotionStore = create<EmotionState>((set, get) => {
   const init = applyBranch(initialEmo);
+  const bg = loadBg();
   return {
     emo: { ...initialEmo },
     branch: init.branch,
@@ -52,6 +94,10 @@ export const useEmotionStore = create<EmotionState>((set, get) => {
 
     speech: "오늘 마음은 어때? 🌙",
     outcomeShown: false,
+
+    bgMode: bg.mode,
+    bgPreset: bg.preset,
+    bgCustom: bg.custom,
 
     feed: (key) => {
       const emo = { ...get().emo };
@@ -128,8 +174,30 @@ export const useEmotionStore = create<EmotionState>((set, get) => {
       }),
 
     hideOutcome: () => set({ outcomeShown: false }),
+
+    setBgPreset: (key) => {
+      saveBg({ mode: "preset", preset: key, custom: get().bgCustom });
+      set({ bgMode: "preset", bgPreset: key });
+    },
+    setBgCustom: (idx, color) => {
+      const next = [...get().bgCustom] as [string, string, string];
+      next[idx] = color;
+      saveBg({ mode: "custom", preset: get().bgPreset, custom: next });
+      set({ bgMode: "custom", bgCustom: next });
+    },
+    setBgMode: (mode) => {
+      saveBg({ mode, preset: get().bgPreset, custom: get().bgCustom });
+      set({ bgMode: mode });
+    },
   };
 });
+
+// 현재 모드/프리셋/커스텀을 종합한 CSS background 값을 반환.
+// 컴포넌트에서 selector로 구독해 인라인 스타일에 그대로 적용.
+export function selectBackground(s: EmotionState): string {
+  if (s.bgMode === "custom") return customBg(s.bgCustom[0], s.bgCustom[1], s.bgCustom[2]);
+  return BG_PRESET_BY_KEY[s.bgPreset].bg;
+}
 
 // 외부에서 BRANCH/COL 다시 import 안 하도록 재노출 편의
 export { BRANCH, COL, LINES };

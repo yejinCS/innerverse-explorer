@@ -11,7 +11,7 @@ import { CameraRig } from "./CameraRig";
 export function Scene() {
   return (
     <Canvas
-      camera={{ position: [0, 0.3, 7], fov: 42, near: 0.1, far: 100 }}
+      camera={{ position: [0, 1.6, 6.6], fov: 44, near: 0.1, far: 100 }}
       gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
       dpr={[1, 2]}
     >

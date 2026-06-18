@@ -4,10 +4,13 @@ import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useEmotionStore } from "@/store/emotionStore";
 
-const SOLO_POS = new THREE.Vector3(0, 0.3, 7);
-const FRIEND_POS = new THREE.Vector3(2.0, 0.3, 8.4);
-const SOLO_LOOK = new THREE.Vector3(0, 0, 0);
-const FRIEND_LOOK = new THREE.Vector3(1.9, 0, 0);
+// 마크 3인칭처럼: 모모를 피사체로 정면 중앙에 두고, 살짝 위에서 내려다봄.
+// 시선 타깃이 행성 중심(0,0,0)이 아니라 행성 앞면에 선 모모(≈ z 1.67).
+// 행성은 모모 발밑에서 유리 "땅"처럼 곡선으로 깔린다.
+const SOLO_POS = new THREE.Vector3(0, 1.6, 6.6);
+const FRIEND_POS = new THREE.Vector3(2.1, 2.2, 13);
+const SOLO_LOOK = new THREE.Vector3(0, 0.3, 1.65);
+const FRIEND_LOOK = new THREE.Vector3(2.1, 0.2, 1.5);
 
 export function CameraRig() {
   const { camera } = useThree();

@@ -1,0 +1,503 @@
+/* INNERVERSE 공통 디자인 토큰 + 모바일 폰 mockup 공유 클래스
+   글래스 모모 화면(/glass)과 신규 27화면이 같은 폰 프레임/색/타이포를 공유한다. */
+
+@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css");
+
+:root {
+  /* 배경 */
+  --iv-bg1: #1b1430;
+  --iv-bg2: #0c0a16;
+  --iv-bg3: #07060d;
+  /* 표면 */
+  --iv-surf: rgba(25, 21, 39, 0.74);
+  --iv-surf2: #211b34;
+  --iv-line: rgba(255, 255, 255, 0.1);
+  --iv-hairline: rgba(255, 255, 255, 0.07);
+  --iv-glass: rgba(25, 21, 39, 0.72);
+  /* 텍스트 */
+  --iv-txt: #f4f3fa;
+  --iv-txt2: #9b95ad;
+  --iv-txt3: #6a6480;
+  /* 브랜드 보라 */
+  --iv-purple: #8b7ff0;
+  --iv-purple2: #a394f7;
+  --iv-purple-deep1: #3a2d6e;
+  --iv-purple-deep2: #4a3a8a;
+  /* 감정 */
+  --iv-emo-joy: #e8c45f;
+  --iv-emo-calm: #5fc88a;
+  --iv-emo-love: #e87fb8;
+  --iv-emo-sad: #6f9ae8;
+  --iv-emo-anger: #e8744e;
+  --iv-emo-tension: #d99a4e;
+  --iv-emo-empty: #8a82a0;
+  --iv-amber: #d99a4e;
+  --iv-green: #5fc88a;
+  --iv-love: #e87fb8;
+  --iv-sad: #6f9ae8;
+  --iv-empty: #8a82a0;
+
+  --iv-font: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+/* 페이지 전체를 폰 mockup 위에 띄우는 스테이지 (앱 전반에서 동일) */
+.iv-page {
+  min-height: 100vh;
+  font-family: var(--iv-font);
+  color: var(--iv-txt);
+  background: radial-gradient(1200px 800px at 70% -10%, #1b1430, #0c0a16 55%, #07060d 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 26px 16px 56px;
+  -webkit-tap-highlight-color: transparent;
+}
+.iv-page *, .iv-page *::before, .iv-page *::after {
+  box-sizing: border-box;
+}
+
+/* 폰 외형 (392×850) */
+.iv-phone {
+  position: relative;
+  width: 392px;
+  height: 850px;
+  border-radius: 46px;
+  background: #000;
+  padding: 11px;
+  box-shadow:
+    0 0 0 2px #2a2740,
+    0 30px 90px -20px rgba(0, 0, 0, 0.85),
+    0 0 90px -16px rgba(124, 111, 232, 0.35);
+  flex: 0 0 auto;
+}
+.iv-phone-screen {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 36px;
+  overflow: hidden;
+  background: radial-gradient(800px 700px at 50% -10%, #1b1430, #0c0a16 55%, #07060d 100%);
+  display: flex;
+  flex-direction: column;
+  color: var(--iv-txt);
+  font-family: var(--iv-font);
+}
+.iv-phone-notch {
+  position: absolute;
+  top: 11px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 118px;
+  height: 26px;
+  background: #000;
+  border-radius: 0 0 16px 16px;
+  z-index: 40;
+}
+
+/* 상태바 */
+.iv-sb {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 24px 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  flex: 0 0 auto;
+}
+.iv-sb-r {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.7);
+  letter-spacing: 1px;
+}
+
+/* AppBar */
+.iv-appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 18px 4px;
+  min-height: 50px;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+.iv-appbar h1 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--iv-txt);
+  margin: 0;
+  flex: 1;
+  text-align: center;
+}
+.iv-appbar-side {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* IconButton (원형) */
+.iv-iconbtn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--iv-surf);
+  border: 1px solid var(--iv-line);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 15px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  flex: 0 0 auto;
+  font-family: inherit;
+}
+.iv-iconbtn:active {
+  transform: scale(0.94);
+}
+
+/* 본문 스크롤 영역 */
+.iv-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.iv-body::-webkit-scrollbar {
+  width: 6px;
+}
+.iv-body::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+}
+.iv-body--tabbed {
+  padding-bottom: 96px; /* TabBar 영역 확보 */
+}
+
+/* 캡션 라벨 (UPPERCASE) */
+.iv-cap {
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--iv-purple2);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* 카드 */
+.iv-card {
+  background: var(--iv-surf);
+  border: 1px solid var(--iv-line);
+  border-radius: 22px;
+  padding: 18px;
+  backdrop-filter: blur(12px);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.iv-card-sm {
+  border-radius: 16px;
+  padding: 14px;
+  gap: 8px;
+}
+.iv-card-purple {
+  background: linear-gradient(135deg, var(--iv-purple-deep1), var(--iv-purple-deep2));
+  border: none;
+}
+.iv-card-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--iv-txt);
+}
+.iv-card-sub {
+  font-size: 12.5px;
+  color: var(--iv-txt2);
+  line-height: 1.55;
+}
+
+/* 칩 */
+.iv-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--iv-surf2);
+  color: var(--iv-txt2);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: inherit;
+}
+.iv-chip.on {
+  background: linear-gradient(135deg, #5648a0, #7c6fe8);
+  color: #fff;
+}
+
+/* 버튼 */
+.iv-btn {
+  font: inherit;
+  border: none;
+  cursor: pointer;
+  border-radius: 15px;
+  padding: 15px;
+  font-weight: 700;
+  font-size: 14.5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #fff;
+  transition: transform 0.12s;
+}
+.iv-btn:active {
+  transform: scale(0.97);
+}
+.iv-btn-primary {
+  background: linear-gradient(135deg, #7c6fe8, #a394f7);
+  box-shadow: 0 8px 22px -8px rgba(124, 111, 232, 0.7);
+}
+.iv-btn-ghost {
+  background: var(--iv-surf2);
+  border: 1px solid var(--iv-line);
+}
+.iv-btn-block {
+  width: 100%;
+}
+
+/* TabBar (하단 4탭) */
+.iv-tabbar {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 14px;
+  height: 68px;
+  background: rgba(20, 17, 32, 0.92);
+  border: 1px solid var(--iv-line);
+  border-radius: 22px;
+  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 30;
+  padding: 0 6px;
+}
+.iv-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font: inherit;
+  background: none;
+  border: none;
+  color: var(--iv-txt3);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 4px;
+}
+.iv-tab-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+.iv-tab.on {
+  color: var(--iv-purple2);
+}
+
+/* 감정 점 */
+.iv-emodot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* 감정 태그 */
+.iv-emotag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--iv-surf2);
+  color: var(--iv-txt);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* 감정 바 */
+.iv-emobar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.iv-emobar-label {
+  width: 42px;
+  color: var(--iv-txt2);
+  font-weight: 600;
+}
+.iv-emobar-track {
+  flex: 1;
+  height: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.iv-emobar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.6s ease;
+}
+.iv-emobar-val {
+  font-size: 11.5px;
+  color: var(--iv-txt2);
+  font-weight: 600;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* DateChip */
+.iv-datechip {
+  width: 50px;
+  height: 54px;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.iv-datechip-day {
+  font-size: 17px;
+  line-height: 1.1;
+}
+.iv-datechip-week {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
+}
+
+/* 2D Planet */
+.iv-planet {
+  position: relative;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 25%, var(--p-hi, #b8f0d0), var(--p-mid, #5fc88a) 50%, var(--p-lo, #1e6c3e) 100%);
+  box-shadow:
+    0 0 60px -10px var(--p-glow, rgba(95, 200, 138, 0.55)),
+    inset -8px -16px 28px -8px rgba(0, 0, 0, 0.45);
+}
+.iv-planet::after {
+  content: "";
+  position: absolute;
+  inset: 6%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 60% 80%, transparent 55%, rgba(0, 0, 0, 0.25) 100%);
+  pointer-events: none;
+}
+
+/* 2D Momo */
+.iv-momo {
+  position: relative;
+  width: var(--m-size, 60px);
+  height: calc(var(--m-size, 60px) * 1.18);
+  border-radius: 48% 48% 50% 50% / 50% 50% 48% 48%;
+  background: linear-gradient(180deg, #ffffff 0%, #f0eef9 100%);
+  box-shadow: 0 8px 20px -10px rgba(0, 0, 0, 0.5), inset 0 -8px 12px -6px rgba(0, 0, 0, 0.15);
+}
+.iv-momo::before, .iv-momo::after {
+  content: "";
+  position: absolute;
+  top: 38%;
+  width: 8%;
+  height: 7%;
+  border-radius: 50%;
+  background: #1a1a1a;
+}
+.iv-momo::before { left: 28%; }
+.iv-momo::after { right: 28%; }
+
+/* 입력 필드 */
+.iv-input {
+  width: 100%;
+  background: var(--iv-surf2);
+  border: 1px solid var(--iv-line);
+  border-radius: 14px;
+  padding: 14px 16px;
+  color: var(--iv-txt);
+  font: inherit;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.iv-input::placeholder {
+  color: var(--iv-txt3);
+}
+.iv-input:focus {
+  border-color: rgba(163, 148, 247, 0.55);
+}
+.iv-textarea {
+  min-height: 200px;
+  resize: none;
+  line-height: 1.6;
+}
+
+/* 토글 */
+.iv-toggle {
+  display: inline-flex;
+  width: 46px;
+  height: 27px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 3px;
+  cursor: pointer;
+  border: none;
+  position: relative;
+  transition: background 0.2s;
+}
+.iv-toggle-knob {
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.2s;
+}
+.iv-toggle.on {
+  background: linear-gradient(135deg, #7c6fe8, #a394f7);
+}
+.iv-toggle.on .iv-toggle-knob {
+  transform: translateX(19px);
+}
+
+/* 보조 헤더 */
+.iv-section-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--iv-txt);
+}
+
+/* 별 배경(데코) */
+.iv-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 18%, #fff 60%, transparent 100%),
+    radial-gradient(1px 1px at 78% 32%, #fff 60%, transparent 100%),
+    radial-gradient(1.3px 1.3px at 42% 64%, #fff 60%, transparent 100%),
+    radial-gradient(1px 1px at 88% 78%, #fff 60%, transparent 100%),
+    radial-gradient(1px 1px at 25% 82%, #fff 60%, transparent 100%),
+    radial-gradient(1.2px 1.2px at 64% 14%, #fff 60%, transparent 100%);
+  opacity: 0.55;
+}
