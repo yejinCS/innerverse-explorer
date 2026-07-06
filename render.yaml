@@ -1,0 +1,19 @@
+# Render Blueprint — INNERVERSE AI 백엔드 (FastAPI)
+# Render 대시보드에서 이 레포 연결 → Blueprint 감지 → GEMINI_API_KEY / ALLOWED_ORIGINS 만 채우면 됨.
+services:
+  - type: web
+    name: innerverse-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      # 아래 2개는 대시보드에서 직접 입력 (시크릿/도메인)
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS   # 배포된 프론트 도메인 (예: https://innerverse.vercel.app)
+        sync: false
