@@ -58,7 +58,15 @@ export default function Signup() {
         setTimeout(() => nav("/login", { replace: true }), 1500);
       }
     } catch (e) {
-      setErr("가입 실패: " + (e as Error).message);
+      const msg = (e as Error)?.message || "";
+      // Supabase 서버 미연결(네트워크/미배포) → 데모 모드로 폴백해서 그대로 진입
+      if (/fetch|network|failed|load/i.test(msg)) {
+        setProfile(trimmed, color);
+        login(trimmed, email || `${trimmed}@example.com`);
+        nav("/home", { replace: true });
+        return;
+      }
+      setErr("가입 실패: " + msg);
     } finally {
       setBusy(false);
     }

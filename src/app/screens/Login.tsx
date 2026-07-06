@@ -35,7 +35,14 @@ export default function Login() {
     try {
       await signInWithPassword(email.trim(), pw);
       nav("/home", { replace: true });
-    } catch {
+    } catch (e) {
+      const msg = (e as Error)?.message || "";
+      // Supabase 서버 미연결(네트워크/미배포) → 데모 모드로 폴백
+      if (/fetch|network|failed|load/i.test(msg)) {
+        login(name || email.split("@")[0], email);
+        nav("/home", { replace: true });
+        return;
+      }
       setErr("로그인 실패 — 이메일/비밀번호를 확인하거나 회원가입해 주세요.");
     } finally {
       setBusy(false);

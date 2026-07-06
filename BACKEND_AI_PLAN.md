@@ -224,3 +224,33 @@ OPENAI_API_KEY는 .env로, 커밋 금지.
 React는 18 유지하고, deps만 안전하게 정리해줘 (npm outdated 기준 마이너·패치 + browserslist).
 빌드/3D(/experience) 깨지는지 확인하고. React 19는 아직 하지 마 (R3F 때문).
 ```
+
+---
+
+## 8. 현재 상태 (2026-06 업데이트) — 앱 통합 · AI 연결 · 배포 준비
+
+- ✅ **두 클론 통합 완료:** `C:\Users\user\Documents\innerverse-explorer` = 브랜치 `full-app-wip` = **전체 앱**(30+ 화면 + `src/diorama` 3D + `src/pages/Landing` 랜딩 + `backend/`). 옛 `C:\Users\user\innerverse-explorer` 클론은 `full-app-wip`에 백업 커밋 후 삭제 예정.
+- ✅ **Gemini AI 실연결 확인:** `/api/momo/reply` 가 실제 Gemini 답장 생성(백엔드 `.env`의 `GEMINI_API_KEY`, `_get_llm()` Gemini 우선). 백엔드(8000) 떠 있을 때만 동작, 꺼지면 스크립트 폴백.
+- ✅ **가입/로그인 데모 폴백:** Supabase 미연결(Failed to fetch) 시 로컬 데모 로그인 → `/home` (`Signup.tsx`/`Login.tsx`). 진짜 키 넣으면 실제 인증 동작.
+- ✅ **랜딩 링크 수정:** "체험하기" 가 없는 `/experience` → `/home` 으로.
+
+### 라우트 맵
+| 경로 | 화면 |
+|---|---|
+| `/` | 스플래시 → 로그인 |
+| `/home` | 홈(탭: 일기·주간리뷰·설정) |
+| `/pitch` | 발표용 랜딩페이지 |
+| `/glass` | 디오라마 3D |
+| `/momo/chat` | 모모 AI 챗 (Gemini) |
+
+### 로컬 실행 (2개 프로세스)
+```
+창1  npm run dev                                   # 프론트 :8080
+창2  py -m uvicorn backend.main:app --port 8000    # AI 백엔드 :8000
+```
+
+### ⏳ 배포 (다음 단계)
+- **프론트:** Vercel/Netlify (정적, GitHub 자동배포) — SPA rewrite 필요
+- **백엔드:** Render/Railway/Cloud Run — `GEMINI_API_KEY` 시크릿 등록
+- **연결:** 프론트 `VITE_API_URL` = 배포된 백엔드 URL · 백엔드 `ALLOWED_ORIGINS` = 프론트 도메인
+- ※ PPT 핸드오프(`PITCH_HANDOFF.md`)는 `feat/innerverse-2.0-landing` 브랜치에 있음.

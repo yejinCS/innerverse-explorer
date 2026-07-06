@@ -231,7 +231,7 @@ export default function Landing() {
             <a href="#business" className="transition-colors hover:text-foreground">수익 모델</a>
           </div>
           <Button asChild size="sm" className="bg-cosmic-cyan text-primary-foreground hover:bg-cosmic-cyan/90">
-            <Link to="/experience">
+            <Link to="/home">
               체험하기 <ArrowRight className="ml-1 h-4 w-4" />
             </Link>
           </Button>
@@ -271,7 +271,7 @@ export default function Landing() {
 
             <div className="mt-10 flex flex-wrap items-center gap-4">
               <Button asChild size="lg" className="bg-cosmic-cyan text-primary-foreground hover:bg-cosmic-cyan/90">
-                <Link to="/experience">
+                <Link to="/home">
                   나의 행성 만들기 <ArrowRight className="ml-1.5 h-5 w-5" />
                 </Link>
               </Button>
@@ -492,7 +492,7 @@ export default function Landing() {
               혼자가 아닌, 잇닿은 내면의 우주로.
             </p>
             <Button asChild size="lg" className="mt-10 bg-cosmic-cyan text-primary-foreground hover:bg-cosmic-cyan/90">
-              <Link to="/experience">
+              <Link to="/home">
                 INNERVERSE 체험 시작 <ArrowRight className="ml-1.5 h-5 w-5" />
               </Link>
             </Button>
