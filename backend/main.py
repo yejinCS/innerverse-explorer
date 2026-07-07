@@ -11,7 +11,20 @@ API 계약 = BACKEND_AI_PLAN.md 3절. 응답 규격은 프론트 `src/store/emot
   - 위기 연계 여부는 항상 사용자 선택. 직접 의료행위 금지 → 제휴 병원/플랫폼 아웃링크.
 
 현재 단계 = Phase 0(토대): 계약 고정 + 더미/휴리스틱 응답.
-실제 OpenAI 연결은 Phase 1+ 에서 `analyze_with_llm()` 등을 채운다.
+실제 LLM 연결은 Phase 1+ 에서 `analyze_with_llm()` 등을 채운다.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔀 토글 구조 (2축 독립 선택) — providers.py 참고
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  축 1) LLM_BACKEND : "vllm" | "claude" | "gemini" | "openai" | "auto"
+        - vllm   : 셀프호스팅 OSS 모델 (OpenAI 호환 엔드포인트)
+        - claude : Anthropic 외부 API
+        - auto   : 키/설정을 보고 자동 (claude→vllm→gemini→openai)
+
+  축 2) VLLM_HOST   : "modal" | "runpod" | "custom"
+        - vLLM 서버가 실제로 도는 곳. base_url 을 결정.
+        - LLM_BACKEND="vllm" 일 때만 의미 있음.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 from __future__ import annotations
 
@@ -22,6 +35,15 @@ from typing import Literal, Optional
 from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+
+from providers import (
+    LLM_BACKEND,
+    VLLM_HOST,
+    get_chat_client,
+    get_embed_client,
+    llm_text,
+    provider_status,
+)
 
 # backend/.env 자동 로드 (python-dotenv 없으면 무시)
 try:
@@ -286,57 +308,56 @@ PROMPT_ANALYZE = (
     '"diary":{{"emotions":[{{"label":"기쁨","pct":n}}],"primary":"기쁨"}}}}\n'
     '일기: """{text}"""'
 )
-
-
 GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 
-def _get_llm():
-    """공급자 자동 선택. Gemini 우선 → OpenAI → None.
-    Gemini 는 OpenAI 호환 엔드포인트라 같은 SDK(base_url 만 교체)로 쓴다.
-    반환: (client, model) 또는 None."""
-    try:
-        from openai import OpenAI
-    except ImportError:
-        print("openai SDK 미설치 — 휴리스틱 폴백")
-        return None
-
-    gemini_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if gemini_key:
-        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-        return OpenAI(api_key=gemini_key, base_url=GEMINI_BASE_URL), model
-
-    openai_key = os.getenv("OPENAI_API_KEY")
-    if openai_key:
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        return OpenAI(api_key=openai_key), model
-
-    return None
-
-
 def analyze_with_llm(text: str) -> Optional[AnalyzeResponse]:
-    """LLM(Gemini/OpenAI)으로 실제 분석. 키 없거나 실패하면 None → 휴리스틱 폴백."""
+    """LLM(토글 선택)으로 실제 분석. 키/서버 없거나 실패하면 None → 휴리스틱 폴백.
+
+    JSON 분석은 OpenAI 호환 chat 엔드포인트(vllm/gemini/openai)를 사용.
+    → get_chat_client() 가 토글에 따라 (client, model) 을 준다.
+    ⚠️ claude 백엔드는 chat.completions 대신 Anthropic SDK
+       claude 전용일 때는 analyze 도 llm_text 기반 JSON 파싱으로 폴백한다.
+    """
     import json
 
     if not text.strip():
         return None
-    llm = _get_llm()
-    if llm is None:
-        return None
-    client, model = llm
 
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": PROMPT_ANALYZE.format(text=text)}],
-            response_format={"type": "json_object"},
-            temperature=0.4,
-        )
-        data = json.loads(resp.choices[0].message.content or "{}")
-    except Exception as e:  # 네트워크/파싱 등 모든 실패 → 폴백
-        print(f"LLM analyze 실패, 휴리스틱 폴백: {e}")
-        return None
+    prompt = PROMPT_ANALYZE.format(text=text)
 
+    # 1) OpenAI 호환 경로 (vllm / gemini / openai) — response_format 지원
+    chat = get_chat_client()
+    if chat is not None:
+        client, model = chat
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.4,
+            )
+            data = json.loads(resp.choices[0].message.content or "{}")
+            return _analyze_from_data(data, text)
+        except Exception as e:  # 네트워크/파싱 등 모든 실패 → 다음 경로
+            print(f"LLM analyze(chat) 실패: {e}")
+
+    # 2) claude 등 텍스트-온리 경로 — llm_text 로 JSON 유도 후 파싱
+    raw = llm_text("너는 JSON만 출력하는 감정 분석기다.", prompt)
+    if raw:
+        try:
+            # 코드펜스 제거 후 파싱
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            return _analyze_from_data(data, text)
+        except Exception as e:
+            print(f"LLM analyze(text) 파싱 실패, 휴리스틱 폴백: {e}")
+
+    return None
+
+
+def _analyze_from_data(data: dict, text: str) -> AnalyzeResponse:
+    """LLM JSON dict → AnalyzeResponse (검증·클램프·폴백 포함)."""
     emo = {k: max(0, min(100, int(data.get(k, 0) or 0))) for k in ("pos", "calm", "ten", "sad", "emp")}
     dominant = data.get("dominant")
     if dominant not in ("bloom", "calm", "tense", "wither", "void"):
@@ -355,34 +376,33 @@ def analyze_with_llm(text: str) -> Optional[AnalyzeResponse]:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 임베딩 (RAG 장기기억) — Gemini/OpenAI 둘 다 768차원으로 맞춤
+# 임베딩 (RAG 장기기억) — 768차원 설정
 # ─────────────────────────────────────────────────────────────────────────────
 def embed_text(text: str) -> Optional[list[float]]:
+    """토글 임베딩 — get_embed_client() 가 (client, model, dim) 반환. 없으면 None."""
     if not text.strip():
         return None
-    try:
-        from openai import OpenAI
-    except ImportError:
+    ec = get_embed_client()
+    if ec is None:
         return None
-    gem = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if gem:
-        try:
-            client = OpenAI(api_key=gem, base_url=GEMINI_BASE_URL)
-            r = client.embeddings.create(model=os.getenv("EMBED_MODEL", "text-embedding-004"), input=text)
-            return list(r.data[0].embedding)
-        except Exception as e:
-            print(f"embed(gemini) 실패: {e}")
-            return None
-    oa = os.getenv("OPENAI_API_KEY")
-    if oa:
-        try:
-            client = OpenAI(api_key=oa)
-            r = client.embeddings.create(model="text-embedding-3-small", input=text, dimensions=768)
-            return list(r.data[0].embedding)
-        except Exception as e:
-            print(f"embed(openai) 실패: {e}")
-            return None
-    return None
+    client, model, dim = ec
+    try:
+        kwargs = {"model": model, "input": text}
+        if dim:  # openai 계열만 dimensions 지원. vllm/gemini 는 고정.
+            kwargs["dimensions"] = dim
+        r = client.embeddings.create(**kwargs)
+        return list(r.data[0].embedding)
+    except Exception as e:
+        # dimensions 미지원 서버(vllm 등)면 빼고 재시도
+        if "dimensions" in str(e).lower():
+            try:
+                r = client.embeddings.create(model=model, input=text)
+                return list(r.data[0].embedding)
+            except Exception as e2:
+                print(f"embed 재시도 실패: {e2}")
+                return None
+        print(f"embed 실패: {e}")
+        return None
 
 
 # 모모 공감 답장 프롬프트 (BACKEND_AI_PLAN.md 4-2) — '묻는 엔진' 역할 + 기억 주입
@@ -396,38 +416,6 @@ PROMPT_MOMO_SYSTEM = (
 )
 
 
-def llm_text(system: str, user: str) -> Optional[str]:
-    """통합 텍스트 생성 — Anthropic(Claude) 우선(PPT 일치) → Gemini/OpenAI → None."""
-    ak = os.getenv("ANTHROPIC_API_KEY")
-    if ak:
-        try:
-            import anthropic
-
-            client = anthropic.Anthropic(api_key=ak)
-            msg = client.messages.create(
-                model=os.getenv("ANTHROPIC_MODEL", "claude-3-5-haiku-latest"),
-                max_tokens=400,
-                system=system,
-                messages=[{"role": "user", "content": user}],
-            )
-            return "".join(getattr(b, "text", "") for b in msg.content)
-        except Exception as e:
-            print(f"Claude 실패, 폴백: {e}")
-    llm = _get_llm()
-    if llm:
-        client, model = llm
-        try:
-            r = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-                temperature=0.6,
-            )
-            return r.choices[0].message.content
-        except Exception as e:
-            print(f"llm_text 실패, 폴백: {e}")
-    return None
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # 라우트
 # ─────────────────────────────────────────────────────────────────────────────
@@ -438,45 +426,35 @@ def read_root():
 
 @app.get("/api/health")
 def health():
-    """진단용 — 어떤 AI 공급자가 활성인지, SDK/키 상태 확인."""
-    has_gemini = bool(os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY"))
-    has_openai = bool(os.getenv("OPENAI_API_KEY"))
-    try:
-        import openai  # noqa: F401
-
-        sdk = True
-    except ImportError:
-        sdk = False
-    if has_gemini and sdk:
-        provider = "gemini"
-    elif has_openai and sdk:
-        provider = "openai"
-    else:
-        provider = "heuristic"
-    return {
-        "provider": provider,
-        "gemini_key_loaded": has_gemini,
-        "openai_key_loaded": has_openai,
-        "openai_sdk_installed": sdk,
-    }
+    """진단용 — 현재 토글(LLM_BACKEND / VLLM_HOST)과 각 공급자 상태."""
+    return provider_status()
 
 
 @app.get("/api/_debug/llm")
 def debug_llm():
-    """실제 LLM 호출을 한 번 시도하고 결과/에러를 그대로 반환 (진단용)."""
-    llm = _get_llm()
-    if llm is None:
-        return {"ok": False, "reason": "no provider — key 또는 openai SDK 없음"}
-    client, model = llm
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": 'respond with json {"ok": true}'}],
-            response_format={"type": "json_object"},
-        )
-        return {"ok": True, "model": model, "sample": resp.choices[0].message.content}
-    except Exception as e:
-        return {"ok": False, "model": model, "error": f"{type(e).__name__}: {e}"}
+    """실제 LLM 호출을 한 번 시도하고 결과/에러를 그대로 반환 (진단용).
+    현재 토글 경로를 그대로 탄다."""
+    # chat 경로 우선
+    chat = get_chat_client()
+    if chat is not None:
+        client, model = chat
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": 'respond with json {"ok": true}'}],
+                response_format={"type": "json_object"},
+            )
+            return {"ok": True, "backend": LLM_BACKEND, "host": VLLM_HOST, "model": model,
+                    "sample": resp.choices[0].message.content}
+        except Exception as e:
+            return {"ok": False, "backend": LLM_BACKEND, "host": VLLM_HOST, "model": model,
+                    "error": f"{type(e).__name__}: {e}"}
+    # claude 텍스트 경로
+    raw = llm_text("너는 JSON만 출력한다.", 'respond with json {"ok": true}')
+    if raw is not None:
+        return {"ok": True, "backend": LLM_BACKEND, "host": VLLM_HOST, "sample": raw}
+    return {"ok": False, "backend": LLM_BACKEND, "host": VLLM_HOST,
+            "reason": "no provider — 키/서버/ SDK 확인"}
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
@@ -553,7 +531,7 @@ async def momo_reply(req: MomoReplyRequest):
 
 @app.post("/api/embed", response_model=EmbedResponse)
 def embed(req: EmbedRequest):
-    """RAG 임베딩 — 키 있으면 768차원 벡터, 없으면 None(프론트가 폴백 검색)."""
+    """RAG 임베딩 — 토글 공급자로 벡터화. 없으면 None(프론트가 폴백 검색)."""
     v = embed_text(req.text)
     return EmbedResponse(embedding=v, dim=len(v) if v else 0)
 
@@ -579,45 +557,58 @@ def reflect(req: ReflectRequest):
     fallback = ReflectResponse(fact_summary=req.fact_summary or "", persona_summary=req.persona_summary or "")
     if not req.diaries:
         return fallback
-    llm = _get_llm()
-    if llm is None:
-        return fallback
-    client, model = llm
+
     user = (
         f"기존 fact_summary: {req.fact_summary or '(없음)'}\n"
         f"기존 persona_summary: {req.persona_summary or '(없음)'}\n\n"
         "최근 일기:\n" + "\n".join(f"- {d}" for d in req.diaries[:10])
     )
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": PROMPT_REFLECT}, {"role": "user", "content": user}],
-            response_format={"type": "json_object"},
-            temperature=0.3,
-        )
-        d = json.loads(resp.choices[0].message.content or "{}")
-        facts = []
-        for f in d.get("facts") or []:
-            if not f.get("key"):
-                continue
-            kind = str(f.get("kind", "slow"))
-            if kind not in ("permanent", "slow", "tracked"):
-                kind = "slow"
-            facts.append(ReflectFact(kind=kind, key=str(f["key"]), value=str(f.get("value", ""))))
-        rels = [
-            ReflectRelation(name=str(r["name"]), relation=str(r.get("relation", "")), sentiment=str(r.get("sentiment", "")))
-            for r in (d.get("relations") or [])
-            if r.get("name")
-        ]
-        return ReflectResponse(
-            fact_summary=str(d.get("fact_summary") or req.fact_summary or ""),
-            persona_summary=str(d.get("persona_summary") or req.persona_summary or ""),
-            facts=facts,
-            relations=rels,
-        )
-    except Exception as e:
-        print(f"reflect 실패: {e}")
+
+    # chat(JSON) 경로 우선, 실패 시 claude 텍스트 경로
+    d: Optional[dict] = None
+    chat = get_chat_client()
+    if chat is not None:
+        client, model = chat
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": PROMPT_REFLECT}, {"role": "user", "content": user}],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+            )
+            d = json.loads(resp.choices[0].message.content or "{}")
+        except Exception as e:
+            print(f"reflect(chat) 실패: {e}")
+    if d is None:
+        raw = llm_text(PROMPT_REFLECT, user)
+        if raw:
+            try:
+                cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                d = json.loads(cleaned)
+            except Exception as e:
+                print(f"reflect(text) 파싱 실패: {e}")
+    if d is None:
         return fallback
+
+    facts = []
+    for f in d.get("facts") or []:
+        if not f.get("key"):
+            continue
+        kind = str(f.get("kind", "slow"))
+        if kind not in ("permanent", "slow", "tracked"):
+            kind = "slow"
+        facts.append(ReflectFact(kind=kind, key=str(f["key"]), value=str(f.get("value", ""))))
+    rels = [
+        ReflectRelation(name=str(r["name"]), relation=str(r.get("relation", "")), sentiment=str(r.get("sentiment", "")))
+        for r in (d.get("relations") or [])
+        if r.get("name")
+    ]
+    return ReflectResponse(
+        fact_summary=str(d.get("fact_summary") or req.fact_summary or ""),
+        persona_summary=str(d.get("persona_summary") or req.persona_summary or ""),
+        facts=facts,
+        relations=rels,
+    )
 
 
 @app.post("/api/crisis/check", response_model=CrisisCheckResponse)
@@ -633,15 +624,16 @@ async def crisis_check(req: CrisisCheckRequest):
 
 @app.post("/api/vision", response_model=VisionResponse)
 async def vision(photo: UploadFile = File(...)):
-    """멀티모달 사진 분석 — 사진 속 장면·분위기를 일기 맥락으로. (Gemini Vision)
-    키 없거나 실패하면 스텁."""
+    """멀티모달 사진 분석 — 사진 속 장면·분위기를 일기 맥락으로.
+    비전은 OpenAI 호환 image_url 경로(gemini/openai/vllm-VLM)를 사용.
+    claude-only 이거나 키 없으면 스톱"""
     import base64
     import json
 
-    llm = _get_llm()
-    if llm is None:
-        return VisionResponse(labels=["사진"], scene="(분석 불가 — AI 키 없음)", emotion_hint=None)
-    client, model = llm
+    chat = get_chat_client(require_vision=True)
+    if chat is None:
+        return VisionResponse(labels=["사진"], scene="(분석 불가 — 비전 지원 백엔드 없음)", emotion_hint=None)
+    client, model = chat
     try:
         data = await photo.read()
         b64 = base64.b64encode(data).decode()
@@ -701,24 +693,36 @@ def weekly(req: WeeklyReq):
     )
     if not req.diaries:
         return fb
-    llm = _get_llm()
-    if llm is None:
-        return fb
-    client, model = llm
+
     user = "이번 주 일기:\n" + "\n".join(f"- {d}" for d in req.diaries[:10])
-    try:
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "system", "content": PROMPT_WEEKLY}, {"role": "user", "content": user}],
-            response_format={"type": "json_object"},
-            temperature=0.5,
-        )
-        d = json.loads(resp.choices[0].message.content or "{}")
-        recs = [str(x) for x in (d.get("recommendations") or [])][:4]
-        return WeeklyAIResponse(summary=str(d.get("summary") or fb.summary), recommendations=recs or fb.recommendations)
-    except Exception as e:
-        print(f"weekly 실패: {e}")
+
+    d: Optional[dict] = None
+    chat = get_chat_client()
+    if chat is not None:
+        client, model = chat
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": PROMPT_WEEKLY}, {"role": "user", "content": user}],
+                response_format={"type": "json_object"},
+                temperature=0.5,
+            )
+            d = json.loads(resp.choices[0].message.content or "{}")
+        except Exception as e:
+            print(f"weekly(chat) 실패: {e}")
+    if d is None:
+        raw = llm_text(PROMPT_WEEKLY, user)
+        if raw:
+            try:
+                cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+                d = json.loads(cleaned)
+            except Exception as e:
+                print(f"weekly(text) 파싱 실패: {e}")
+    if d is None:
         return fb
+
+    recs = [str(x) for x in (d.get("recommendations") or [])][:4]
+    return WeeklyAIResponse(summary=str(d.get("summary") or fb.summary), recommendations=recs or fb.recommendations)
 
 
 @app.get("/api/weekly/{uid}", response_model=WeeklyReviewResponse)
