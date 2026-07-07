@@ -53,6 +53,18 @@ class Settings:
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     CLAUDE_MODEL: str = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
 
+    # ── 텍스트 생성(모모 답장 등) 온도 ──
+    GEN_TEMPERATURE: float = float(os.getenv("GEN_TEMPERATURE", "0.6"))
+    ANALYZE_TEMPERATURE: float = float(os.getenv("ANALYZE_TEMPERATURE", "0.4"))
+
+    # ── 임베딩(RAG) 설정 (선택) ──
+    # vLLM 로 임베딩 모델을 따로 서빙하거나, OpenAI 임베딩을 쓰고 싶을 때.
+    # 비어 있으면 /api/embed 는 None 을 돌려주고 프론트가 폴백 검색.
+    EMBED_BASE_URL: str = os.getenv("EMBED_BASE_URL", "")       # OpenAI 호환 임베딩 서버
+    EMBED_API_KEY: str = os.getenv("EMBED_API_KEY", "not-needed")
+    EMBED_MODEL: str = os.getenv("EMBED_MODEL", "")            # 예: BAAI/bge-m3, text-embedding-3-small
+    EMBED_DIM: int = int(os.getenv("EMBED_DIM", "0"))         # OpenAI 계열만 dimensions 지원. 0이면 안 보냄.
+
     # ── 공통 ──
     # 외부 모델 호출 타임아웃(초). 서버리스 콜드스타트 고려해 넉넉히.
     REQUEST_TIMEOUT: float = float(os.getenv("REQUEST_TIMEOUT", "120"))
@@ -64,6 +76,5 @@ class Settings:
         if os.getenv("CORS_ORIGINS")
         else ["*"]
     )
-
 
 settings = Settings()

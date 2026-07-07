@@ -5,25 +5,15 @@ API 계약 = BACKEND_AI_PLAN.md 3절. 응답 규격은 프론트 `src/store/emot
 및 `src/lib/api-types.ts`와 1:1로 맞춰야 한다.
 
 5감정 키(pos/calm/ten/sad/emp)는 프론트·백·DB 전부에서 불변. (행성 색 블렌딩이 묶임)
-
-⚠️ 의료/위기 원칙 (BACKEND_AI_PLAN.md 4-3):
-  - AI는 진단하지 않는다. crisis_score / escalate 는 '신호 강도'일 뿐.
-  - 위기 연계 여부는 항상 사용자 선택. 직접 의료행위 금지 → 제휴 병원/플랫폼 아웃링크.
-
-현재 단계 = Phase 0(토대): 계약 고정 + 더미/휴리스틱 응답.
-실제 LLM 연결은 Phase 1+ 에서 `analyze_with_llm()` 등을 채운다.
-
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🔀 토글 구조 (2축 독립 선택) — providers.py 참고
+토글 구조 (2축 독립) — config.py / providers.py / analyzers.py
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  축 1) LLM_BACKEND : "vllm" | "claude" | "gemini" | "openai" | "auto"
-        - vllm   : 셀프호스팅 OSS 모델 (OpenAI 호환 엔드포인트)
-        - claude : Anthropic 외부 API
-        - auto   : 키/설정을 보고 자동 (claude→vllm→gemini→openai)
+  축 1) ANALYZER_BACKEND : vllm | claude | dummy   ('무엇으로' 분석)
+  축 2) VLLM_PROVIDER    : modal | runpod | custom ('어디에' 서빙, vllm 일 때만)
 
-  축 2) VLLM_HOST   : "modal" | "runpod" | "custom"
-        - vLLM 서버가 실제로 도는 곳. base_url 을 결정.
-        - LLM_BACKEND="vllm" 일 때만 의미 있음.
+  main.py 는 analyzers.build_analyzer() 로 얻은 analyzer 만 호출한다.
+  실제 백엔드 분기·서버 위치 해석은 analyzers/providers 가 담당한다.
+  분석 실패 시 settings.FALLBACK_TO_DUMMY 면 휴리스틱/더미로 폴백.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 from __future__ import annotations
@@ -36,13 +26,13 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from providers import (
-    LLM_BACKEND,
-    VLLM_HOST,
-    get_chat_client,
-    get_embed_client,
-    llm_text,
-    provider_status,
+from config import settings
+from providers import build_provider
+from analyzers import (
+    PROMPT_MOMO_SYSTEM,
+    Analyzer,
+    active_backend_name,
+    build_analyzer,
 )
 
 # backend/.env 자동 로드 (python-dotenv 없으면 무시)
@@ -55,14 +45,15 @@ except ImportError:
 
 app = FastAPI(title="Innerverse AI Backend", version="0.1.0")
 
-# 🚨 CORS — 배포 시 allow_origins 를 실제 프론트 도메인으로 좁힐 것 (BACKEND_AI_PLAN.md 규율 7)
+# 🚨 CORS — 배포 시 CORS_ORIGINS 를 실제 프론트 도메인으로 좁힐 것 (config.py)
+'''
 # 환경변수 ALLOWED_ORIGINS(콤마 구분)가 있으면 그것을 우선 사용.
 _origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
 ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
-
+'''
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -192,7 +183,7 @@ class WeeklyReviewResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 휴리스틱 (Phase 0 더미) — Phase 1에서 LLM 으로 교체
+# 휴리스틱 (외부 백엔드 실패/미설정 시 폴백) — 계약을 항상 성립시키는 안전망
 # ─────────────────────────────────────────────────────────────────────────────
 def decide_dominant(e: dict[str, float]) -> Dominant:
     """프론트 constants.ts decideBranch 와 동일 로직 (포팅). dominant 라벨 일치 보장."""
@@ -230,7 +221,6 @@ def heuristic_emotions(text: str) -> EmotionScores:
         for t in terms:
             if t in text:
                 scores[key] += 22  # type: ignore[index]
-    # 0~100 클램프
     return EmotionScores(**{k: max(0, min(100, v)) for k, v in scores.items()})
 
 
@@ -244,8 +234,7 @@ def heuristic_keywords(text: str) -> list[str]:
     return (found[:3]) or ["기록"]
 
 
-# 7라벨 휴리스틱 (프론트 DiaryWrite.analyze 규칙 포팅) — LLM 실패 시 폴백
-_DIARY_RULES: list[tuple[str, str]] = [
+# 7라벨 휴리스틱 (프론트 DiaryWrite.analyze 규칙 포팅) — LLM 실패 시 폴백_DIARY_RULES: list[tuple[str, str]] = [
     ("기쁨", "기쁘|행복|뿌듯|좋|감사|신나|설레|즐거"),
     ("사랑", "사랑|보고싶|애틋|따뜻|애정"),
     ("차분", "평온|편안|안정|차분|괜찮|담담|쉬|쉬엄"),
@@ -293,71 +282,8 @@ def normalize_diary(raw: dict, text: str) -> DiaryResult:
     return DiaryResult(emotions=emos, primary=primary)
 
 
-# 감정 분석 프롬프트 (BACKEND_AI_PLAN.md 4-1)
-PROMPT_ANALYZE = (
-    "너는 감정 분석기다. 사용자의 일기를 읽고 Russell 순환모형 5감정의 '비율'을 0~100으로 매겨라.\n"
-    "- pos 고양(긍정·높은각성) / calm 평온(긍정·낮은각성) / ten 긴장(부정·높은각성)\n"
-    "- sad 격앙(부정·높은각성) / emp 침체(부정·낮은각성)\n"
-    "또한 핵심 키워드 3개, 위기신호 점수(crisis_score 0~1)를 산출하라.\n"
-    "crisis_score는 자해·자살·심각한 절망 표현이 강할수록 1에 가깝게. (진단이 아니라 신호 강도)\n"
-    'dominant 는 bloom|calm|tense|wither|void 중 하나.\n'
-    "또한 일기 화면 표시용으로 7개 한국어 감정라벨(기쁨/차분/사랑/슬픔/분노/긴장/공허)의 비중(pct, 합 100 근처)을 "
-    "비중 높은 순으로 매기고, 가장 강한 라벨을 primary로 정하라.\n"
-    '반드시 JSON만 출력: {{"pos":n,"calm":n,"ten":n,"sad":n,"emp":n,'
-    '"dominant":"...","keywords":[...],"crisis_score":n,'
-    '"diary":{{"emotions":[{{"label":"기쁨","pct":n}}],"primary":"기쁨"}}}}\n'
-    '일기: """{text}"""'
-)
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-
-
-def analyze_with_llm(text: str) -> Optional[AnalyzeResponse]:
-    """LLM(토글 선택)으로 실제 분석. 키/서버 없거나 실패하면 None → 휴리스틱 폴백.
-
-    JSON 분석은 OpenAI 호환 chat 엔드포인트(vllm/gemini/openai)를 사용.
-    → get_chat_client() 가 토글에 따라 (client, model) 을 준다.
-    ⚠️ claude 백엔드는 chat.completions 대신 Anthropic SDK
-       claude 전용일 때는 analyze 도 llm_text 기반 JSON 파싱으로 폴백한다.
-    """
-    import json
-
-    if not text.strip():
-        return None
-
-    prompt = PROMPT_ANALYZE.format(text=text)
-
-    # 1) OpenAI 호환 경로 (vllm / gemini / openai) — response_format 지원
-    chat = get_chat_client()
-    if chat is not None:
-        client, model = chat
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0.4,
-            )
-            data = json.loads(resp.choices[0].message.content or "{}")
-            return _analyze_from_data(data, text)
-        except Exception as e:  # 네트워크/파싱 등 모든 실패 → 다음 경로
-            print(f"LLM analyze(chat) 실패: {e}")
-
-    # 2) claude 등 텍스트-온리 경로 — llm_text 로 JSON 유도 후 파싱
-    raw = llm_text("너는 JSON만 출력하는 감정 분석기다.", prompt)
-    if raw:
-        try:
-            # 코드펜스 제거 후 파싱
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
-            return _analyze_from_data(data, text)
-        except Exception as e:
-            print(f"LLM analyze(text) 파싱 실패, 휴리스틱 폴백: {e}")
-
-    return None
-
-
 def _analyze_from_data(data: dict, text: str) -> AnalyzeResponse:
-    """LLM JSON dict → AnalyzeResponse (검증·클램프·폴백 포함)."""
+    """analyzer 가 준 JSON dict → AnalyzeResponse (검증·클램프·폴백 포함)."""
     emo = {k: max(0, min(100, int(data.get(k, 0) or 0))) for k in ("pos", "calm", "ten", "sad", "emp")}
     dominant = data.get("dominant")
     if dominant not in ("bloom", "calm", "tense", "wither", "void"):
@@ -375,6 +301,7 @@ def _analyze_from_data(data: dict, text: str) -> AnalyzeResponse:
     )
 
 
+'''
 # ─────────────────────────────────────────────────────────────────────────────
 # 임베딩 (RAG 장기기억) — 768차원 설정
 # ─────────────────────────────────────────────────────────────────────────────
@@ -403,17 +330,29 @@ def embed_text(text: str) -> Optional[list[float]]:
                 return None
         print(f"embed 실패: {e}")
         return None
+'''
+def _heuristic_analyze(text: str) -> AnalyzeResponse:
+    """완전 폴백 — 외부 백엔드 없이 계약을 성립시킨다."""
+    emo = heuristic_emotions(text)
+    return AnalyzeResponse(
+        extracted_text=text,
+        pos=emo.pos, calm=emo.calm, ten=emo.ten, sad=emo.sad, emp=emo.emp,
+        dominant=decide_dominant(emo.model_dump()),
+        keywords=heuristic_keywords(text),
+        crisis_score=heuristic_crisis(text),
+        diary=heuristic_diary(text),
+    )
 
 
-# 모모 공감 답장 프롬프트 (BACKEND_AI_PLAN.md 4-2) — '묻는 엔진' 역할 + 기억 주입
-PROMPT_MOMO_SYSTEM = (
-    "너는 '모모', 유리로 빚어진 다정한 AI 감정 동반자다.\n"
-    "- 짧고(2~3문장) 따뜻하게. 판단·훈계·진단 금지.\n"
-    "- CBT 톤: 감정을 인정 → 생각을 살짝 다시 보게 → 작은 한 걸음 제안.\n"
-    "- 아래 '과거 기록'이 있으면 자연스럽게 인용해 '나를 기억하는' 느낌을 줘라 "
-    "(예: 지난번 발표 때도 비슷했는데 잘 넘겼잖아).\n"
-    "- 진단·의료행위 금지. 위기 신호가 강하면 위로 후 전문가 연계를 부드럽게 권한다."
-)
+def _gen_text(system: str, user: str) -> Optional[str]:
+    """analyzer.generate() 안전 래퍼 — 실패하면 None (호출부가 폴백 문구)."""
+    analyzer: Analyzer = build_analyzer()
+    try:
+        out = analyzer.generate(system, user)
+        return out.strip() if out else None
+    except Exception as e:
+        print(f"[main] generate 실패({analyzer.name}): {e}")
+        return None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -424,37 +363,42 @@ def read_root():
     return {"message": "Innerverse AI Server is running!", "version": app.version}
 
 
-@app.get("/api/health")
+@app.get("/health")
 def health():
-    """진단용 — 현재 토글(LLM_BACKEND / VLLM_HOST)과 각 공급자 상태."""
-    return provider_status()
-
-
-@app.get("/api/_debug/llm")
-def debug_llm():
-    """실제 LLM 호출을 한 번 시도하고 결과/에러를 그대로 반환 (진단용).
-    현재 토글 경로를 그대로 탄다."""
-    # chat 경로 우선
-    chat = get_chat_client()
-    if chat is not None:
-        client, model = chat
+    """진단용 — 현재 두 축 토글과 실제 활성 백엔드(폴백 반영)"""
+    provider_name = None
+    provider_url = None
+    if settings.ANALYZER_BACKEND == "vllm":
         try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": 'respond with json {"ok": true}'}],
-                response_format={"type": "json_object"},
-            )
-            return {"ok": True, "backend": LLM_BACKEND, "host": VLLM_HOST, "model": model,
-                    "sample": resp.choices[0].message.content}
+            p = build_provider()
+            provider_name = p.name
+            provider_url = p.endpoint().base_url
         except Exception as e:
-            return {"ok": False, "backend": LLM_BACKEND, "host": VLLM_HOST, "model": model,
-                    "error": f"{type(e).__name__}: {e}"}
-    # claude 텍스트 경로
-    raw = llm_text("너는 JSON만 출력한다.", 'respond with json {"ok": true}')
-    if raw is not None:
-        return {"ok": True, "backend": LLM_BACKEND, "host": VLLM_HOST, "sample": raw}
-    return {"ok": False, "backend": LLM_BACKEND, "host": VLLM_HOST,
-            "reason": "no provider — 키/서버/ SDK 확인"}
+            provider_name = settings.VLLM_PROVIDER
+            provider_url = f"(미해결: {e})"
+
+    return {
+        "status": "ok",
+        "analyzer_backend": settings.ANALYZER_BACKEND,   # 설정값(축1)
+        "active_analyzer": active_backend_name(),         # 실제 활성(폴백 반영)
+        "vllm_provider": settings.VLLM_PROVIDER,           # 설정값(축2)
+        "vllm_provider_resolved": provider_name,
+        "vllm_base_url": provider_url,
+        "vllm_model": settings.VLLM_MODEL or None,
+        "fallback_to_dummy": settings.FALLBACK_TO_DUMMY,
+    }
+
+
+@app.get("/api/_debug/analyze")
+def debug_analyze(text: str = "오늘은 조금 지치고 불안했지만 그래도 버텼다."):
+    """실제 analyzer.analyze() 를 한 번 호출해 원시 결과/에러를 그대로 반환 (진단용).
+    현재 토글 경로를 그대로 탄다. 폴백 없이 raw 를 보고 싶을 때."""
+    analyzer = build_analyzer()
+    try:
+        raw = analyzer.analyze(text)
+        return {"ok": True, "backend": analyzer.name, "raw": raw}
+    except Exception as e:
+        return {"ok": False, "backend": analyzer.name, "error": f"{type(e).__name__}: {e}"}
 
 
 @app.post("/api/analyze", response_model=AnalyzeResponse)
@@ -463,7 +407,8 @@ async def analyze_diary(
     text_data: str | None = Form(None),
 ):
     """일기(text/audio) → 5감정 + dominant + keywords + crisis_score.
-    응답 규격 = 프론트 emotionStore / api-types.ts 와 1:1."""
+    응답 규격 = 프론트 emotionStore / api-types.ts 와 1:1.
+    analyzer.analyze() 우선, 실패 시 휴리스틱 폴백."""
     extracted_text = text_data or ""
 
     # 음성 → (Phase 4) Whisper STT. 현재는 임시 저장 후 플레이스홀더.
@@ -478,11 +423,9 @@ async def analyze_diary(
     if text_data:
         print(f"✍️ 텍스트 일기 수신: {text_data[:20]}...")
 
-    # Phase 1: LLM 우선, 없으면 휴리스틱 폴백
-    llm = analyze_with_llm(extracted_text)
-    if llm is not None:
-        return llm
-
+    if not extracted_text.strip():
+        return _heuristic_analyze(extracted_text)
+    '''
     emo = heuristic_emotions(extracted_text)
     dominant = decide_dominant(emo.model_dump())
     return AnalyzeResponse(
@@ -497,12 +440,24 @@ async def analyze_diary(
         crisis_score=heuristic_crisis(extracted_text),
         diary=heuristic_diary(extracted_text),
     )
+    '''
+    analyzer = build_analyzer()
+    try:
+        raw = analyzer.analyze(extracted_text)
+        # dummy 는 고정 안전값 → 휴리스틱으로 보강해서 실제 텍스트 반영
+        if raw.get("_dummy"):
+            return _heuristic_analyze(extracted_text)
+        return _analyze_from_data(raw, extracted_text)
+    except Exception as e:
+        print(f"[main] analyze 실패({analyzer.name}) → 휴리스틱 폴백: {e}")
+        if not settings.FALLBACK_TO_DUMMY:
+            raise
+        return _heuristic_analyze(extracted_text)
 
 
 @app.post("/api/momo/reply", response_model=MomoReplyResponse)
 async def momo_reply(req: MomoReplyRequest):
-    """모모 공감 답장 — RAG(과거 일기 context) + 감정 주입 → LLM. 실패 시 휴리스틱.
-    ⚠️ 진단 금지. 위기 신호 강하면 위로 후 전문가 연계 제안."""
+    """모모 공감 답장 — RAG(과거 일기 context) + 감정 주입 → analyzer.generate(). 실패 시 휴리스틱."""
     crisis = heuristic_crisis(req.text)
     escalate = crisis >= 0.6
 
@@ -518,7 +473,7 @@ async def momo_reply(req: MomoReplyRequest):
     if escalate:
         parts.append("(위기 신호 감지됨 — 위로 후 전문가 연계를 부드럽게 권할 것)")
 
-    reply = llm_text(PROMPT_MOMO_SYSTEM, "\n\n".join(parts))
+    reply = _gen_text(PROMPT_MOMO_SYSTEM, "\n\n".join(parts))
     if not reply:
         if escalate:
             reply = "많이 힘들었구나. 지금은 저보다 전문가의 도움이 필요한 순간 같아요. 비대면 상담을 연결해 드릴까요?"
@@ -531,9 +486,36 @@ async def momo_reply(req: MomoReplyRequest):
 
 @app.post("/api/embed", response_model=EmbedResponse)
 def embed(req: EmbedRequest):
-    """RAG 임베딩 — 토글 공급자로 벡터화. 없으면 None(프론트가 폴백 검색)."""
-    v = embed_text(req.text)
-    return EmbedResponse(embedding=v, dim=len(v) if v else 0)
+    """RAG 임베딩 — EMBED_* 설정 있으면 벡터, 없으면 None(프론트가 폴백 검색).
+    임베딩은 감정분석과 별개 축이라 config.EMBED_* 로 직접 설정."""
+    if not req.text.strip() or not settings.EMBED_BASE_URL or not settings.EMBED_MODEL:
+        return EmbedResponse(embedding=None, dim=0)
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(base_url=settings.EMBED_BASE_URL, api_key=settings.EMBED_API_KEY,
+                        timeout=settings.REQUEST_TIMEOUT)
+        kwargs = {"model": settings.EMBED_MODEL, "input": req.text}
+        if settings.EMBED_DIM:  # OpenAI 계열만 dimensions 지원
+            kwargs["dimensions"] = settings.EMBED_DIM
+        r = client.embeddings.create(**kwargs)
+        v = list(r.data[0].embedding)
+        return EmbedResponse(embedding=v, dim=len(v))
+    except Exception as e:
+        # dimensions 미지원 서버면 빼고 재시도
+        if "dimension" in str(e).lower() and settings.EMBED_DIM:
+            try:
+                from openai import OpenAI
+
+                client = OpenAI(base_url=settings.EMBED_BASE_URL, api_key=settings.EMBED_API_KEY,
+                                timeout=settings.REQUEST_TIMEOUT)
+                r = client.embeddings.create(model=settings.EMBED_MODEL, input=req.text)
+                v = list(r.data[0].embedding)
+                return EmbedResponse(embedding=v, dim=len(v))
+            except Exception as e2:
+                print(f"[main] embed 재시도 실패: {e2}")
+        print(f"[main] embed 실패: {e}")
+        return EmbedResponse(embedding=None, dim=0)
 
 
 PROMPT_REFLECT = (
@@ -544,14 +526,15 @@ PROMPT_REFLECT = (
     "- relations: 일기에 등장한 사람. name/relation/sentiment.\n"
     "근거가 약하면 비워라(지어내지 말 것).\n"
     '반드시 JSON만: {"fact_summary":"...","persona_summary":"...",'
-    '"facts":[{"kind":"slow","key":"직업","value":"대학원생"}],'
+    '"facts":[{"kind":"slow","key":"직업","value":"대학생"}],'
     '"relations":[{"name":"소연","relation":"친구","sentiment":"긍정"}]}'
 )
 
 
 @app.post("/api/reflect", response_model=ReflectResponse)
 def reflect(req: ReflectRequest):
-    """최근 일기 → 사실/성향 요약·구조화 사실·관계 추출 (PPT ③④ 비동기 갱신). 키 없으면 기존 유지."""
+    """최근 일기 → 사실/성향 요약·구조화 사실·관계 추출
+    analyzer.generate() 로 JSON 유도 후 파싱. 실패/미설정이면 기존 값 유지."""
     import json
 
     fallback = ReflectResponse(fact_summary=req.fact_summary or "", persona_summary=req.persona_summary or "")
@@ -563,31 +546,14 @@ def reflect(req: ReflectRequest):
         f"기존 persona_summary: {req.persona_summary or '(없음)'}\n\n"
         "최근 일기:\n" + "\n".join(f"- {d}" for d in req.diaries[:10])
     )
-
-    # chat(JSON) 경로 우선, 실패 시 claude 텍스트 경로
-    d: Optional[dict] = None
-    chat = get_chat_client()
-    if chat is not None:
-        client, model = chat
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": PROMPT_REFLECT}, {"role": "user", "content": user}],
-                response_format={"type": "json_object"},
-                temperature=0.3,
-            )
-            d = json.loads(resp.choices[0].message.content or "{}")
-        except Exception as e:
-            print(f"reflect(chat) 실패: {e}")
-    if d is None:
-        raw = llm_text(PROMPT_REFLECT, user)
-        if raw:
-            try:
-                cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-                d = json.loads(cleaned)
-            except Exception as e:
-                print(f"reflect(text) 파싱 실패: {e}")
-    if d is None:
+    raw = _gen_text(PROMPT_REFLECT, user)
+    if not raw:
+        return fallback
+    try:
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        d = json.loads(cleaned)
+    except Exception as e:
+        print(f"[main] reflect 파싱 실패: {e}")
         return fallback
 
     facts = []
@@ -625,42 +591,16 @@ async def crisis_check(req: CrisisCheckRequest):
 @app.post("/api/vision", response_model=VisionResponse)
 async def vision(photo: UploadFile = File(...)):
     """멀티모달 사진 분석 — 사진 속 장면·분위기를 일기 맥락으로.
-    비전은 OpenAI 호환 image_url 경로(gemini/openai/vllm-VLM)를 사용.
-    claude-only 이거나 키 없으면 스톱"""
+    analyzer.analyze_image() 사용. 백엔드가 vision 미지원이거나 실패하면 스탑."""
     import base64
-    import json
+    #import json
 
-    chat = get_chat_client(require_vision=True)
-    if chat is None:
-        return VisionResponse(labels=["사진"], scene="(분석 불가 — 비전 지원 백엔드 없음)", emotion_hint=None)
-    client, model = chat
+    analyzer = build_analyzer()
     try:
         data = await photo.read()
         b64 = base64.b64encode(data).decode()
         mime = photo.content_type or "image/jpeg"
-        resp = client.chat.completions.create(
-            model=model,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "이 사진을 보고 일기 맥락용으로 JSON만 출력해라. "
-                                '{"labels":[핵심 사물/장면 3~5개 한국어], '
-                                '"scene":"한 줄 분위기 묘사(한국어)", '
-                                '"emotion_hint":"bloom|calm|tense|wither|void 중 하나 또는 null"}'
-                            ),
-                        },
-                        {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                    ],
-                }
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.3,
-        )
-        d = json.loads(resp.choices[0].message.content or "{}")
+        d = analyzer.analyze_image(mime, b64)
         eh = d.get("emotion_hint")
         if eh not in ("bloom", "calm", "tense", "wither", "void"):
             eh = None
@@ -669,8 +609,10 @@ async def vision(photo: UploadFile = File(...)):
             scene=str(d.get("scene") or ""),
             emotion_hint=eh,
         )
+    except NotImplementedError:
+        return VisionResponse(labels=["사진"], scene="(분석 불가 — 비전 지원 백엔드 아님)", emotion_hint=None)
     except Exception as e:
-        print(f"vision 실패: {e}")
+        print(f"[main] vision 실패({analyzer.name}): {e}")
         return VisionResponse(labels=["사진"], scene="(분석 실패)", emotion_hint=None)
 
 
@@ -684,7 +626,7 @@ PROMPT_WEEKLY = (
 
 @app.post("/api/weekly", response_model=WeeklyAIResponse)
 def weekly(req: WeeklyReq):
-    """이번 주 일기 → AI 회고 요약 + 추천. 키 없거나 일기 없으면 기본 문구."""
+    """이번 주 일기 → AI 회고 요약 + 추천. 미설정/일기 없으면 기본 문구."""
     import json
 
     fb = WeeklyAIResponse(
@@ -695,30 +637,14 @@ def weekly(req: WeeklyReq):
         return fb
 
     user = "이번 주 일기:\n" + "\n".join(f"- {d}" for d in req.diaries[:10])
-
-    d: Optional[dict] = None
-    chat = get_chat_client()
-    if chat is not None:
-        client, model = chat
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "system", "content": PROMPT_WEEKLY}, {"role": "user", "content": user}],
-                response_format={"type": "json_object"},
-                temperature=0.5,
-            )
-            d = json.loads(resp.choices[0].message.content or "{}")
-        except Exception as e:
-            print(f"weekly(chat) 실패: {e}")
-    if d is None:
-        raw = llm_text(PROMPT_WEEKLY, user)
-        if raw:
-            try:
-                cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-                d = json.loads(cleaned)
-            except Exception as e:
-                print(f"weekly(text) 파싱 실패: {e}")
-    if d is None:
+    raw = _gen_text(PROMPT_WEEKLY, user)
+    if not raw:
+        return fb
+    try:
+        cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        d = json.loads(cleaned)
+    except Exception as e:
+        print(f"[main] weekly 파싱 실패: {e}")
         return fb
 
     recs = [str(x) for x in (d.get("recommendations") or [])][:4]
