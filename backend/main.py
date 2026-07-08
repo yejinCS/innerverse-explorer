@@ -75,7 +75,7 @@ class EmotionScores(BaseModel):
 
 
 # 일기 화면용 7라벨 (기쁨/차분/사랑/슬픔/분노/긴장/공허) — 프론트 diaryStore.EmotionLabel 과 1:1
-DIARY_LABELS = ("기쁨", "차분", "사랑", "슬픔", "분노", "긴장", "공허")
+_DIARY_LABELS = ("기쁨", "차분", "사랑", "슬픔", "분노", "긴장", "공허")
 
 
 class DiaryEmotion(BaseModel):
@@ -252,7 +252,7 @@ def heuristic_diary(text: str) -> DiaryResult:
     import re
 
     scores = dict(_DIARY_BASE)
-    for label, pat in __DIARY_RULES:
+    for label, pat in _DIARY_RULES:
         m = re.findall(pat, text)
         if m:
             scores[label] += len(m) * 8
@@ -273,13 +273,13 @@ def normalize_diary(raw: dict, text: str) -> DiaryResult:
     emos = []
     for x in items:
         label = str(x.get("label", "")).strip()
-        if label in DIARY_LABELS:
+        if label in _DIARY_LABELS:
             emos.append(DiaryEmotion(label=label, pct=max(0, min(100, int(x.get("pct", 0) or 0)))))
     if not emos:
         return heuristic_diary(text)
     emos.sort(key=lambda e: e.pct, reverse=True)
     primary = str((raw or {}).get("primary") or "").strip()
-    if primary not in DIARY_LABELS:
+    if primary not in _DIARY_LABELS:
         primary = emos[0].label
     return DiaryResult(emotions=emos, primary=primary)
 
