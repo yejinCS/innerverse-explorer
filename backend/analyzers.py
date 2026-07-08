@@ -90,22 +90,6 @@ class DummyAnalyzer(Analyzer):
         # main.py 의 휴리스틱과 겹치지 않게, 여기선 '고정 안전값'만 준다.
         # 실제 감정 추정은 호출부(main)가 heuristic 으로 보강/대체
         return {
-            "emotions": [
-                {"label": "기쁨", "value": 45},
-                {"label": "슬픔", "value": 15},
-                {"label": "분노", "value": 5},
-                {"label": "불안", "value": 20},
-                {"label": "평온", "value": 60},
-            ],
-            "relationships": [
-                {"person": "김팀장", "relation": "직장 동료",
-                 "status": "스트레스 유발", "score": -80},
-                {"person": "지현이", "relation": "친구",
-                 "status": "위로가 됨", "score": 60},
-            ],
-        }
-''' 형식(규격) 점검 필요
-        return {
             "pos": 12, "calm": 20, "ten": 8, "sad": 6, "emp": 6,
             "dominant": "calm",
             "keywords": ["기록"],
@@ -113,11 +97,11 @@ class DummyAnalyzer(Analyzer):
             "diary": {"emotions": [{"label": "차분", "pct": 100}], "primary": "차분"},
             "_dummy": True,
         }
-
+    
     def generate(self, system: str, user: str) -> str:
         # 더미 답장 — 실제 문구는 main 이 상황(context/위기)에 맞게 대체 가능.
         return "그 마음 충분히 그럴 수 있어. 오늘은 작은 한 걸음만 같이 떠올려보자."
-'''
+
 
 # 2) VllmAnalyzer — providers로 얻은 OpenAI 호환 서버 호출
 class VllmAnalyzer(Analyzer):
@@ -236,36 +220,41 @@ class ClaudeAnalyzer(Analyzer):
             messages=[{"role": "user", "content": user}],
         )
         return "".join(getattr(b, "text", "") for b in msg.content)
-'''
-기존 analyze() 주석 처리
-def analyze(self, text: str) -> dict:
-        # guided_json 이 없을 수 있으므로 'tool use'로 구조화 출력을 강제.
-        # 스키마는 schema.py 것을 그대로 재사용 → vLLM 과 동일 계약.
-        tool = {
-            "name": "report_analysis",
-            "description": "일기의 감정·인간관계 분석 결과를 이 형식으로 보고한다.",
-            "input_schema": ANALYSIS_JSON_SCHEMA,
-        }
-        resp = self.client.messages.create(
-            model=self.model,
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            tools=[tool],
-            tool_choice={"type": "tool", "name": "report_analysis"},
-            messages=[{"role": "user", "content": text}],
-        )
-        for block in resp.content:
-            if getattr(block, "type", None) == "tool_use":
-                return block.input
-        raise ValueError("Claude 응답에서 tool_use 결과를 찾지 못했습니다.")
+    '''
+    기존 analyze() 주석 처리
+    def analyze(self, text: str) -> dict:
+            # guided_json 이 없을 수 있으므로 'tool use'로 구조화 출력을 강제.
+            # 스키마는 schema.py 것을 그대로 재사용 → vLLM 과 동일 계약.
+            tool = {
+                "name": "report_analysis",
+                "description": "일기의 감정·인간관계 분석 결과를 이 형식으로 보고한다.",
+                "input_schema": ANALYSIS_JSON_SCHEMA,
+            }
+            resp = self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                tools=[tool],
+                tool_choice={"type": "tool", "name": "report_analysis"},
+                messages=[{"role": "user", "content": text}],
+            )
+            for block in resp.content:
+                if getattr(block, "type", None) == "tool_use":
+                    return block.input
+            raise ValueError("Claude 응답에서 tool_use 결과를 찾지 못했습니다.")
 
-'''
+    '''
     def analyze(self, text: str) -> dict:
         raw = self._messages(
             system="너는 JSON만 출력하는 감정 분석기다. 코드펜스 없이 순수 JSON만.",
             user=PROMPT_ANALYZE.format(text=text),
             max_tokens=800,
         )
+        '''
+        temp = json.loads(_strip_code_fence(raw))
+        print(temp)
+        return temp
+        '''
         return json.loads(_strip_code_fence(raw))
 
     def generate(self, system: str, user: str) -> str:
