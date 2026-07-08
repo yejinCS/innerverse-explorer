@@ -235,7 +235,7 @@ def heuristic_keywords(text: str) -> list[str]:
 
 
 # 7라벨 휴리스틱 (프론트 DiaryWrite.analyze 규칙 포팅) — LLM 실패 시 폴백_
-DIARY_RULES: list[tuple[str, str]] = [
+_DIARY_RULES: list[tuple[str, str]] = [
     ("기쁨", "기쁘|행복|뿌듯|좋|감사|신나|설레|즐거"),
     ("사랑", "사랑|보고싶|애틋|따뜻|애정"),
     ("차분", "평온|편안|안정|차분|괜찮|담담|쉬|쉬엄"),
@@ -252,7 +252,7 @@ def heuristic_diary(text: str) -> DiaryResult:
     import re
 
     scores = dict(_DIARY_BASE)
-    for label, pat in _DIARY_RULES:
+    for label, pat in __DIARY_RULES:
         m = re.findall(pat, text)
         if m:
             scores[label] += len(m) * 8
