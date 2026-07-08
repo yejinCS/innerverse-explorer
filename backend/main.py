@@ -302,16 +302,66 @@ def _analyze_from_data(data: dict, text: str) -> AnalyzeResponse:
         diary=diary,
     )
 
-
-'''
 # ─────────────────────────────────────────────────────────────────────────────
 # 임베딩 (RAG 장기기억) — 768차원 설정
 # ─────────────────────────────────────────────────────────────────────────────
+_embed_client_cache: Optional[tuple] = None
+_embed_client_ready: bool = False
+
+def get_client() -> Optional[tuple]:
+    """
+    임베딩 클라이언트 관문 — 설정이 갖춰졌을 때만 (client, model, dim) 반환.
+
+    반환:
+      (client, model, dim) — 임베딩 사용 가능. client 는 OpenAI 호환.
+                             dim>0 : dimensions 파라미터 전송 가능(OpenAI 계열).
+                             dim==0: 전송 금지(gemini/vllm 등 고정 차원 서버).
+      None                 — 임베딩 미설정/불가. 호출부(embed_text)는 None 으로 폴백.
+
+    설계:
+      - EMBED_BASE_URL 과 EMBED_MODEL 둘 다 있어야 활성. 하나라도 비면 None.
+        (임베딩은 감정분석과 별개 축 → EMBED_* 로만 켠다. 안 채우면 RAG 자동 OFF)
+      - openai SDK 미설치·클라이언트 생성 실패도 None → 서버는 계속 뜬다.
+      - 판정 결과를 캐시(성공/실패 모두)해 요청마다 재생성하지 않는다.
+    """
+    global _embed_client_cache, _embed_client_ready
+
+    if _embed_client_ready:
+        return _embed_client_cache
+
+    _embed_client_ready = True  # 아래 초기화는 한 번만
+
+    # 1) 설정 게이트 — 필수값 없으면 임베딩을 끈 것으로 간주
+    if not settings.EMBED_BASE_URL or not settings.EMBED_MODEL:
+        _embed_client_cache = None
+        return None
+
+    # 2) 클라이언트 생성 (lazy import — 부팅 시 openai 없어도 서버는 뜸)
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            base_url=settings.EMBED_BASE_URL,
+            api_key=settings.EMBED_API_KEY or "not-needed",
+            timeout=settings.REQUEST_TIMEOUT,
+        )
+    except Exception as e:  # ImportError 포함
+        print(f"[embed] 클라이언트 생성 실패 → 임베딩 비활성: {e}")
+        _embed_client_cache = None
+        return None
+
+    # 3) dim 정규화 — 음수 방지, 0 이면 'dimensions 미전송' 신호
+    dim = settings.EMBED_DIM if settings.EMBED_DIM and settings.EMBED_DIM > 0 else 0
+
+    _embed_client_cache = (client, settings.EMBED_MODEL, dim)
+    print(f"[embed] 활성화: model={settings.EMBED_MODEL} dim={dim or '(고정)'}")
+    return _embed_client_cache
+
 def embed_text(text: str) -> Optional[list[float]]:
-    """토글 임베딩 — get_embed_client() 가 (client, model, dim) 반환. 없으면 None."""
+    """토글 임베딩 — get_client() 가 (client, model, dim) 반환. 없으면 None."""
     if not text.strip():
         return None
-    ec = get_embed_client()
+    ec = get_client()
     if ec is None:
         return None
     client, model, dim = ec
@@ -332,7 +382,7 @@ def embed_text(text: str) -> Optional[list[float]]:
                 return None
         print(f"embed 실패: {e}")
         return None
-'''
+
 def _heuristic_analyze(text: str) -> AnalyzeResponse:
     """완전 폴백 — 외부 백엔드 없이 계약을 성립시킨다."""
     emo = heuristic_emotions(text)
@@ -485,7 +535,14 @@ async def momo_reply(req: MomoReplyRequest):
             reply = "그 마음 충분히 그럴 수 있어. 오늘은 작은 한 걸음만 같이 떠올려보자."
     return MomoReplyResponse(reply=reply.strip(), escalate=escalate)
 
-
+'''
+[수정 제안]
+@app.post("/api/embed", response_model=EmbedResponse)
+def embed(req: EmbedRequest):
+    """RAG 임베딩 — embed_text() 단일 경로 사용. 미설정/실패면 None(프론트 폴백 검색)."""
+    v = embed_text(req.text)
+    return EmbedResponse(embedding=v, dim=len(v) if v else 0)
+'''
 @app.post("/api/embed", response_model=EmbedResponse)
 def embed(req: EmbedRequest):
     """RAG 임베딩 — EMBED_* 설정 있으면 벡터, 없으면 None(프론트가 폴백 검색).

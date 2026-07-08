@@ -94,7 +94,7 @@ class DummyAnalyzer(Analyzer):
             "dominant": "calm",
             "keywords": ["기록"],
             "crisis_score": 0.0,
-            "diary": {"emotions": [{"label": "차분", "pct": 100}], "primary": "차분"},
+            "diary": {"emotions": [{"label": "calm", "pct": 100}], "primary": "calm"},
             "_dummy": True,
         }
     
@@ -155,10 +155,10 @@ class VllmAnalyzer(Analyzer):
             temperature=settings.GEN_TEMPERATURE,
         )
         return resp.choices[0].message.content or ""
-''' 멀티 모달로 확장 계획중
+''' 멀티 모달로 확장
     def analyze_image(self, mime: str, b64: str) -> dict:
         """vLLM 이 VLM(멀티모달)로 떠 있을 때만 동작.
-        일반 텍스트 모델이면 서버가 에러 → 호출부가 스텁 처리."""
+        일반 텍스트 모델이면 서버가 에러 → 호출부가 스탑 처리."""
         client = self._get_client()
         resp = client.chat.completions.create(
             model=self._model,
@@ -172,7 +172,7 @@ class VllmAnalyzer(Analyzer):
                                 "이 사진을 보고 일기 맥락용으로 JSON만 출력해라. "
                                 '{"labels":[핵심 사물/장면 3~5개 한국어], '
                                 '"scene":"한 줄 분위기 묘사(한국어)", '
-                                '"emotion_hint":"bloom|calm|tense|wither|void 중 하나 또는 null"}'
+                                '"emotion_hint":"pos|calm|tense|emp|sad 중 하나 또는 null"}'
                             ),
                         },
                         {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
@@ -220,41 +220,13 @@ class ClaudeAnalyzer(Analyzer):
             messages=[{"role": "user", "content": user}],
         )
         return "".join(getattr(b, "text", "") for b in msg.content)
-    '''
-    기존 analyze() 주석 처리
-    def analyze(self, text: str) -> dict:
-            # guided_json 이 없을 수 있으므로 'tool use'로 구조화 출력을 강제.
-            # 스키마는 schema.py 것을 그대로 재사용 → vLLM 과 동일 계약.
-            tool = {
-                "name": "report_analysis",
-                "description": "일기의 감정·인간관계 분석 결과를 이 형식으로 보고한다.",
-                "input_schema": ANALYSIS_JSON_SCHEMA,
-            }
-            resp = self.client.messages.create(
-                model=self.model,
-                max_tokens=1024,
-                system=SYSTEM_PROMPT,
-                tools=[tool],
-                tool_choice={"type": "tool", "name": "report_analysis"},
-                messages=[{"role": "user", "content": text}],
-            )
-            for block in resp.content:
-                if getattr(block, "type", None) == "tool_use":
-                    return block.input
-            raise ValueError("Claude 응답에서 tool_use 결과를 찾지 못했습니다.")
-
-    '''
+    
     def analyze(self, text: str) -> dict:
         raw = self._messages(
             system="너는 JSON만 출력하는 감정 분석기다. 코드펜스 없이 순수 JSON만.",
             user=PROMPT_ANALYZE.format(text=text),
             max_tokens=800,
         )
-        '''
-        temp = json.loads(_strip_code_fence(raw))
-        print(temp)
-        return temp
-        '''
         return json.loads(_strip_code_fence(raw))
 
     def generate(self, system: str, user: str) -> str:
