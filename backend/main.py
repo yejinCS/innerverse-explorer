@@ -46,11 +46,6 @@ except ImportError:
 app = FastAPI(title="Innerverse AI Backend", version="0.1.0")
 
 # 🚨 CORS — 배포 시 CORS_ORIGINS 를 실제 프론트 도메인으로 좁힐 것 (config.py)
-'''
-# 환경변수 ALLOWED_ORIGINS(콤마 구분)가 있으면 그것을 우선 사용.
-_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
-ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
-'''
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -359,7 +354,7 @@ def get_client() -> Optional[tuple]:
 
 def embed_text(text: str) -> Optional[list[float]]:
     """토글 임베딩 — get_client() 가 (client, model, dim) 반환. 없으면 None."""
-    if not text.strip():
+    if not text.strip() or not settings.EMBED_BASE_URL or not settings.EMBED_MODEL:
         return None
     ec = get_client()
     if ec is None:
@@ -477,22 +472,7 @@ async def analyze_diary(
 
     if not extracted_text.strip():
         return _heuristic_analyze(extracted_text)
-    '''
-    emo = heuristic_emotions(extracted_text)
-    dominant = decide_dominant(emo.model_dump())
-    return AnalyzeResponse(
-        extracted_text=extracted_text,
-        pos=emo.pos,
-        calm=emo.calm,
-        ten=emo.ten,
-        sad=emo.sad,
-        emp=emo.emp,
-        dominant=dominant,
-        keywords=heuristic_keywords(extracted_text),
-        crisis_score=heuristic_crisis(extracted_text),
-        diary=heuristic_diary(extracted_text),
-    )
-    '''
+    
     analyzer = build_analyzer()
     try:
         raw = analyzer.analyze(extracted_text)
@@ -509,7 +489,7 @@ async def analyze_diary(
 
 @app.post("/api/momo/reply", response_model=MomoReplyResponse)
 async def momo_reply(req: MomoReplyRequest):
-    """모모 공감 답장 — RAG(과거 일기 context) + 감정 주입 → analyzer.generate(). 실패 시 휴리스틱."""
+    """모모 공감 답장 — RAG(과거 일기 context) + 감정 주입 → analyzer.generate(); 실패 시 휴리스틱."""
     crisis = heuristic_crisis(req.text)
     escalate = crisis >= 0.6
 
@@ -535,47 +515,12 @@ async def momo_reply(req: MomoReplyRequest):
             reply = "그 마음 충분히 그럴 수 있어. 오늘은 작은 한 걸음만 같이 떠올려보자."
     return MomoReplyResponse(reply=reply.strip(), escalate=escalate)
 
-'''
-[수정 제안]
+
 @app.post("/api/embed", response_model=EmbedResponse)
 def embed(req: EmbedRequest):
     """RAG 임베딩 — embed_text() 단일 경로 사용. 미설정/실패면 None(프론트 폴백 검색)."""
     v = embed_text(req.text)
     return EmbedResponse(embedding=v, dim=len(v) if v else 0)
-'''
-@app.post("/api/embed", response_model=EmbedResponse)
-def embed(req: EmbedRequest):
-    """RAG 임베딩 — EMBED_* 설정 있으면 벡터, 없으면 None(프론트가 폴백 검색).
-    임베딩은 감정분석과 별개 축이라 config.EMBED_* 로 직접 설정."""
-    if not req.text.strip() or not settings.EMBED_BASE_URL or not settings.EMBED_MODEL:
-        return EmbedResponse(embedding=None, dim=0)
-    try:
-        from openai import OpenAI
-
-        client = OpenAI(base_url=settings.EMBED_BASE_URL, api_key=settings.EMBED_API_KEY,
-                        timeout=settings.REQUEST_TIMEOUT)
-        kwargs = {"model": settings.EMBED_MODEL, "input": req.text}
-        if settings.EMBED_DIM:  # OpenAI 계열만 dimensions 지원
-            kwargs["dimensions"] = settings.EMBED_DIM
-        r = client.embeddings.create(**kwargs)
-        v = list(r.data[0].embedding)
-        return EmbedResponse(embedding=v, dim=len(v))
-    except Exception as e:
-        # dimensions 미지원 서버면 빼고 재시도
-        if "dimension" in str(e).lower() and settings.EMBED_DIM:
-            try:
-                from openai import OpenAI
-
-                client = OpenAI(base_url=settings.EMBED_BASE_URL, api_key=settings.EMBED_API_KEY,
-                                timeout=settings.REQUEST_TIMEOUT)
-                r = client.embeddings.create(model=settings.EMBED_MODEL, input=req.text)
-                v = list(r.data[0].embedding)
-                return EmbedResponse(embedding=v, dim=len(v))
-            except Exception as e2:
-                print(f"[main] embed 재시도 실패: {e2}")
-        print(f"[main] embed 실패: {e}")
-        return EmbedResponse(embedding=None, dim=0)
-
 
 PROMPT_REFLECT = (
     "너는 사용자의 장기 기억을 관리하는 분석기다. 최근 일기들과 기존 프로필을 보고 갱신하라.\n"
